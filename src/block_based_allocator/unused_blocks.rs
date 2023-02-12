@@ -1,18 +1,14 @@
+use rustc_hash::FxHashSet;
 use std::collections::btree_map::RangeMut;
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::ops::Deref;
-use rustc_hash::FxHashSet;
 
 #[derive(Default)]
 pub struct UnusedBlocks(BTreeMap<u64 /*len*/, FxHashSet<u64>>);
 
 impl UnusedBlocks {
-    pub fn insert(
-        &mut self,
-        offset: u64,
-        len: u64,
-    ) {
+    pub fn insert(&mut self, offset: u64, len: u64) {
         let blocks = &mut self.0;
         match blocks.get_mut(&len) {
             None => {
@@ -25,11 +21,7 @@ impl UnusedBlocks {
             }
         }
     }
-    pub fn remove(
-        &mut self,
-        offset: u64,
-        len: u64,
-    ) {
+    pub fn remove(&mut self, offset: u64, len: u64) {
         let blocks = &mut self.0;
         if let Some(set) = blocks.get_mut(&len) {
             set.remove(&offset);

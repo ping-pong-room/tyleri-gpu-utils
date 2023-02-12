@@ -1,5 +1,5 @@
-use rustc_hash::FxHashMap;
 use crate::block_based_allocator::unused_blocks::UnusedBlocks;
+use rustc_hash::FxHashMap;
 
 struct Block {
     len: u64,
@@ -64,16 +64,13 @@ impl Chunk {
             );
         }
         let mut unused_blocks = UnusedBlocks::default();
-        unused_blocks.insert(
-            allocated_len,
-            len - allocated_len,
-        );
+        unused_blocks.insert(allocated_len, len - allocated_len);
         Self {
             unused_blocks,
             blocks,
         }
     }
-    pub fn allocate(&mut self, len: u64, alignment: u64) -> Option<u64/*offset*/> {
+    pub fn allocate(&mut self, len: u64, alignment: u64) -> Option<u64 /*offset*/> {
         if len == 0 {
             return None;
         }
@@ -90,10 +87,7 @@ impl Chunk {
                         // too small
                         continue;
                     } else {
-                        self.unused_blocks.remove(
-                            offset,
-                            unused_len,
-                        );
+                        self.unused_blocks.remove(offset, unused_len);
                         block.used = true;
                         if len != block.len {
                             let new_offset = offset + len;
@@ -107,10 +101,7 @@ impl Chunk {
                             block.next = Some(new_offset);
                             block.len = len;
                             self.blocks.insert(new_offset, new_block);
-                            self.unused_blocks.insert(
-                                new_offset,
-                                new_len,
-                            );
+                            self.unused_blocks.insert(new_offset, new_len);
                         }
                         return Some(offset);
                     }
@@ -121,10 +112,7 @@ impl Chunk {
                         // not enough for alignment
                         continue;
                     } else {
-                        self.unused_blocks.remove(
-                            offset,
-                            unused_len,
-                        );
+                        self.unused_blocks.remove(offset, unused_len);
                         let block_len = block.len;
                         block.len = wasted_len;
 
@@ -138,10 +126,7 @@ impl Chunk {
                             pre: new_pre,
                             next: new_next,
                         };
-                        self.unused_blocks.insert(
-                            offset,
-                            block.len,
-                        );
+                        self.unused_blocks.insert(offset, block.len);
 
                         if available_len > len {
                             let tail_block_offset = offset + wasted_len + len;
@@ -156,10 +141,7 @@ impl Chunk {
                                 },
                             );
                             new_block.next = Some(tail_block_offset);
-                            self.unused_blocks.insert(
-                                tail_block_offset,
-                                tail_block_len,
-                            );
+                            self.unused_blocks.insert(tail_block_offset, tail_block_len);
                         }
 
                         self.blocks.insert(new_offset, new_block);
@@ -184,16 +166,10 @@ impl Chunk {
             let pre_block = self.blocks.get_mut(&pre_offset).unwrap_unchecked();
             // if pre is unused.
             if !pre_block.used {
-                self.unused_blocks.remove(
-                    pre_offset,
-                    pre_block.len,
-                );
+                self.unused_blocks.remove(pre_offset, pre_block.len);
                 pre_block.len += block.len;
                 pre_block.next = block.next;
-                self.unused_blocks.insert(
-                    pre_offset,
-                    pre_block.len,
-                );
+                self.unused_blocks.insert(pre_offset, pre_block.len);
                 return;
             }
         }
@@ -248,11 +224,7 @@ fn test() {
     let mut chunk = Chunk::new_and_allocated(128, 1);
     assert_eq!(chunk.blocks.get(&0).unwrap().len, 1);
     assert_eq!(chunk.blocks.get(&1).unwrap().len, 127);
-    assert!(chunk
-        .unused_blocks
-        .get(&127)
-        .unwrap()
-        .contains(&1));
+    assert!(chunk.unused_blocks.get(&127).unwrap().contains(&1));
     assert_eq!(chunk.blocks.get(&0).unwrap().pre, None);
     assert_eq!(chunk.blocks.get(&0).unwrap().next, Some(1));
     assert_eq!(chunk.blocks.get(&1).unwrap().pre, Some(0));
@@ -263,16 +235,8 @@ fn test() {
     assert_eq!(chunk.blocks.get(&1).unwrap().len, 1);
     assert_eq!(chunk.blocks.get(&2).unwrap().len, 2);
     assert_eq!(chunk.blocks.get(&4).unwrap().len, 124);
-    assert!(chunk
-        .unused_blocks
-        .get(&1)
-        .unwrap()
-        .contains(&1));
-    assert!(chunk
-        .unused_blocks
-        .get(&124)
-        .unwrap()
-        .contains(&4));
+    assert!(chunk.unused_blocks.get(&1).unwrap().contains(&1));
+    assert!(chunk.unused_blocks.get(&124).unwrap().contains(&4));
     assert_eq!(chunk.blocks.get(&1).unwrap().pre, Some(0));
     assert_eq!(chunk.blocks.get(&1).unwrap().next, Some(2));
     assert_eq!(chunk.blocks.get(&2).unwrap().pre, Some(1));
@@ -297,21 +261,13 @@ fn test() {
     assert_eq!(chunk.blocks.get(&0).unwrap().len, 1);
     assert_eq!(chunk.blocks.get(&1).unwrap().len, 127);
     assert_eq!(chunk.blocks.len(), 2);
-    assert!(chunk
-        .unused_blocks
-        .get(&127)
-        .unwrap()
-        .contains(&1));
+    assert!(chunk.unused_blocks.get(&127).unwrap().contains(&1));
     assert_eq!(chunk.unused_blocks.len(), 1);
 
     chunk.free(0);
 
     assert_eq!(chunk.blocks.get(&0).unwrap().len, 128);
-    assert!(chunk
-        .unused_blocks
-        .get(&128)
-        .unwrap()
-        .contains(&0));
+    assert!(chunk.unused_blocks.get(&128).unwrap().contains(&0));
     assert_eq!(chunk.blocks.get(&0).unwrap().pre, None);
     assert_eq!(chunk.blocks.get(&0).unwrap().next, None);
 }
