@@ -1,5 +1,5 @@
 [package]
-name = "tyleri_mem_utils"
+name = "tyleri-mem-utils"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 rustc-hash = "1.1.0"
 derive_more = "0.99.17"
-yarvk = { path = "../../yarvk/yarvk" }
+yarvk = { path = "../yarvk/yarvk" }
+rayon = "1.5.3"

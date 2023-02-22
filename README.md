@@ -1,2 +1,2 @@
-# tyleri_mem_utils
+# tyleri-mem-utils
 GPU Memory management utils for Tyleri engine.
