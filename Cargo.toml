@@ -1,5 +1,5 @@
 [package]
-name = "tyleri-mem-utils"
+name = "tyleri-gpu-utils"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,3 +10,4 @@ rustc-hash = "1.1.0"
 derive_more = "0.99.17"
 yarvk = { path = "../yarvk/yarvk" }
 rayon = "1.5.3"
+dashmap = {version = "5.4.0",  features = ["rayon"] }

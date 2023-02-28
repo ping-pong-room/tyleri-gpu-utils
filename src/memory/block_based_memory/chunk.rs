@@ -1,4 +1,4 @@
-use crate::block_based_allocator::unused_blocks::UnusedBlocks;
+use crate::memory::block_based_memory::unused_blocks::UnusedBlocks;
 use rustc_hash::FxHashMap;
 
 struct Block {

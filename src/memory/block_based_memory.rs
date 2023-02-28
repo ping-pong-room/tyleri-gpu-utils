@@ -1,14 +1,16 @@
-use crate::block_based_allocator::chunk::Chunk;
-use crate::memory_object::{MemoryBackedResource, MemoryResource};
+use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
+use crate::memory::block_based_memory::chunk::Chunk;
+use crate::memory::private::PrivateMemoryBackedResource;
+use crate::memory::{MemoryBackedResource, MemoryResource};
 use derive_more::{Deref, DerefMut};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
-
 use yarvk::device_memory::{DeviceMemory, IMemoryRequirements, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
-use yarvk::WHOLE_SIZE;
+use yarvk::DeviceSize;
+use yarvk::{MemoryPropertyFlags};
 
 mod chunk;
 mod unused_blocks;
@@ -17,22 +19,6 @@ struct BlockBasedResource<T: UnboundResource> {
     resource: T::BoundType,
     block_index: BlockIndex,
     allocator: Arc<BlockBasedAllocator>,
-}
-
-impl<T: UnboundResource> BlockBasedResource<T> {
-    fn try_get_memory(&mut self, f: &dyn Fn(&mut [u8])) -> Result<(), yarvk::Result> {
-        let chunks = self.allocator.chunks.read().unwrap();
-        let memory = chunks
-            .get(&self.block_index.chunk_index)
-            .unwrap()
-            .device_memory
-            .get_memory(
-                self.block_index.offset,
-                self.resource.get_memory_requirements().size,
-            )?;
-        f(memory);
-        Ok(())
-    }
 }
 
 impl<T: UnboundResource> BindingResource for BlockBasedResource<T> {
@@ -45,31 +31,52 @@ impl<T: UnboundResource> BindingResource for BlockBasedResource<T> {
     fn raw_mut(&mut self) -> &mut Self::RawTy {
         self.resource.raw_mut()
     }
-}
 
-impl<T: UnboundResource> MemoryBackedResource for BlockBasedResource<T> {
-    fn memory_memory(&mut self, f: &dyn Fn(&mut [u8])) -> Result<(), yarvk::Result> {
-        match self.try_get_memory(f) {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                {
-                    let mut chunks = self.allocator.chunks.write().unwrap();
-                    let device_memory = &mut chunks
-                        .get_mut(&self.block_index.chunk_index)
-                        .unwrap()
-                        .device_memory;
-                    if device_memory.map_memory(0, WHOLE_SIZE).is_err() {
-                        device_memory.map_memory(
-                            self.block_index.offset,
-                            self.resource.get_memory_requirements().size,
-                        )?
-                    }
-                }
-                self.try_get_memory(f)
-            }
-        }
+    fn offset(&self) -> DeviceSize {
+        self.resource.offset()
+    }
+
+    fn size(&self) -> DeviceSize {
+        self.resource.size()
+    }
+
+    fn device(&self) -> &Arc<Device> {
+        todo!()
     }
 }
+
+impl<T: UnboundResource> PrivateMemoryBackedResource for BlockBasedResource<T> {
+    fn memory_property_flags(&self) -> MemoryPropertyFlags {
+        self.allocator.memory_type.property_flags
+    }
+
+    fn memory_memory(
+        &mut self,
+        offset: DeviceSize,
+        size: DeviceSize,
+        f: &dyn Fn(&mut [u8]),
+    ) -> Result<(), yarvk::Result> {
+        assert!(offset + size <= self.size());
+        let offset = self.offset() + offset;
+        let chunks = self.allocator.chunks.read().unwrap();
+        chunks
+            .get(&self.block_index.chunk_index)
+            .unwrap()
+            .device_memory
+            .map_memory(offset, size, f)
+    }
+
+    fn get_device_memory(&self) -> Arc<AutoMappedDeviceMemory> {
+        let chunks = self.allocator.chunks.read().unwrap();
+        chunks
+            .get(&self.block_index.chunk_index)
+            .unwrap()
+            .device_memory
+            .clone()
+    }
+}
+
+impl<T: UnboundResource> MemoryBackedResource for BlockBasedResource<T> {}
 
 impl<T: UnboundResource> Drop for BlockBasedResource<T> {
     fn drop(&mut self) {
@@ -88,7 +95,7 @@ struct VkChunk {
     #[deref]
     #[deref_mut]
     chunk: Chunk,
-    device_memory: DeviceMemory,
+    device_memory: Arc<AutoMappedDeviceMemory>,
 }
 
 pub struct BlockBasedAllocator {
@@ -98,18 +105,25 @@ pub struct BlockBasedAllocator {
 }
 
 impl BlockBasedAllocator {
+    pub fn new(device: &Arc<Device>, memory_type: MemoryType) -> Arc<Self> {
+        Arc::new(Self {
+            device: device.clone(),
+            memory_type,
+            chunks: Default::default(),
+        })
+    }
     pub fn capacity(&self, len: u64) -> Result<(), yarvk::Result> {
         // we allocate the space twice then asked, to make sure the memory is big enough to hold
         // resource with any alignment
         let len = len * 2;
-        let device_memory = DeviceMemory::builder(&self.memory_type, self.device.clone())
+        let device_memory = DeviceMemory::builder(&self.memory_type, &self.device)
             .allocation_size(len)
             .build()?;
         self.chunks.write().unwrap().insert(
             len,
             VkChunk {
                 chunk: Chunk::new(len),
-                device_memory,
+                device_memory: Arc::new(AutoMappedDeviceMemory::new(device_memory)),
             },
         );
         Ok(())
@@ -124,9 +138,10 @@ impl BlockBasedAllocator {
         // we allocate the space twice then asked, to make sure the memory is big enough to hold
         // resource with any alignment
         let len = len * 2;
-        let device_memory = DeviceMemory::builder(memory_type, device.clone())
+        let device_memory = DeviceMemory::builder(memory_type, device)
             .allocation_size(len)
             .build()?;
+        let device_memory = Arc::new(AutoMappedDeviceMemory::new(device_memory));
         chunks.insert(
             len,
             VkChunk {
@@ -164,7 +179,11 @@ impl BlockBasedAllocator {
             }
             match block_index {
                 None => {
-                    let max_chunk_size = chunks.iter().rev().next().unwrap().1.device_memory.size;
+                    let max_chunk_size = match chunks.iter().rev().next() {
+                        None => memory_requirements.size,
+                        Some((_, chunk)) => chunk.device_memory.size,
+                    };
+
                     Self::capacity_with_allocate(
                         &self.device,
                         &self.memory_type,
@@ -179,7 +198,7 @@ impl BlockBasedAllocator {
         let chunks = self.chunks.read().unwrap();
         let chunk = chunks.get(&block_index.chunk_index).unwrap();
         let resource = t
-            .bind_memory(&chunk.device_memory, block_index.offset)
+            .bind_memory(&chunk.device_memory.get_device_memory(), block_index.offset)
             .expect("internal error: bind_memory failed");
         Ok(Arc::new(BlockBasedResource::<T> {
             resource,
