@@ -7,12 +7,12 @@ use yarvk::command::command_buffer::Level::SECONDARY;
 use yarvk::command::command_buffer::RenderPassScope::OUTSIDE;
 use yarvk::command::command_buffer::State::RECORDING;
 
-use yarvk::image_subresource_range::{ImageSubresourceRange};
+use yarvk::image_subresource_range::ImageSubresourceRange;
 use yarvk::pipeline::pipeline_stage_flags::{PipelineStageFlag, PipelineStageFlags};
+use yarvk::Buffer;
 use yarvk::BufferCopy;
 use yarvk::IBuffer;
 use yarvk::{AccessFlags, BufferImageCopy, ImageLayout};
-use yarvk::{Buffer};
 use yarvk::{DependencyFlags, Image};
 
 pub trait CmdCopyBufferTo {

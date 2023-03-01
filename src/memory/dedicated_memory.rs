@@ -9,7 +9,7 @@ use yarvk::device::Device;
 use yarvk::device_memory::{DeviceMemory, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::DeviceSize;
-use yarvk::{MemoryPropertyFlags};
+use yarvk::MemoryPropertyFlags;
 
 struct DedicatedResourceMemory<T: UnboundResource> {
     object: T::BoundType,

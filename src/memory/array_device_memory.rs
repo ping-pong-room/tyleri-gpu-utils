@@ -86,11 +86,6 @@ impl ArrayDeviceMemory {
             .allocation_size(padding_size * counts as u64)
             .build()?;
         let _map_result = device_memory.map_memory(0, WHOLE_SIZE);
-        results.push(BindMemoryInfo {
-            resource: unbound,
-            memory: &device_memory,
-            memory_offset: 0,
-        });
         (1..counts)
             .into_par_iter()
             .map(|i| BindMemoryInfo {
@@ -99,6 +94,11 @@ impl ArrayDeviceMemory {
                 memory_offset: i as DeviceSize * padding_size,
             })
             .collect_into_vec(&mut results);
+        results.push(BindMemoryInfo {
+            resource: unbound,
+            memory: &device_memory,
+            memory_offset: 0,
+        });
         let mut results = results
             .rayon_split()
             .into_par_iter()

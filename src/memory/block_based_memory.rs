@@ -10,7 +10,7 @@ use yarvk::device::Device;
 use yarvk::device_memory::{DeviceMemory, IMemoryRequirements, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::DeviceSize;
-use yarvk::{MemoryPropertyFlags};
+use yarvk::MemoryPropertyFlags;
 
 mod chunk;
 mod unused_blocks;
@@ -188,7 +188,7 @@ impl BlockBasedAllocator {
                         &self.device,
                         &self.memory_type,
                         &mut chunks,
-                        max_chunk_size * 2,
+                        std::cmp::max(max_chunk_size * 2, memory_requirements.size),
                         memory_requirements.size,
                     )?
                 }
