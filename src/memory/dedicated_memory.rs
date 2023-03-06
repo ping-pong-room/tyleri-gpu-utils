@@ -1,11 +1,9 @@
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::private::PrivateMemoryBackedResource;
 use crate::memory::{MemoryBackedResource, MemoryResource};
-
 use std::sync::Arc;
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
-
 use yarvk::device_memory::{DeviceMemory, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::DeviceSize;

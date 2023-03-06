@@ -12,7 +12,6 @@ use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-
 use yarvk::device_memory::mapped_ranges::MappedRanges;
 
 use yarvk::pipeline::pipeline_stage_flags::PipelineStageFlags;

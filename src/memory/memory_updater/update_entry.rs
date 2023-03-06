@@ -1,12 +1,10 @@
 use crate::memory::MemoryResource;
-
 use std::sync::Arc;
 use yarvk::barrier::{BufferMemoryBarrier, ImageMemoryBarrier};
 use yarvk::command::command_buffer::CommandBuffer;
 use yarvk::command::command_buffer::Level::SECONDARY;
 use yarvk::command::command_buffer::RenderPassScope::OUTSIDE;
 use yarvk::command::command_buffer::State::RECORDING;
-
 use yarvk::image_subresource_range::ImageSubresourceRange;
 use yarvk::pipeline::pipeline_stage_flags::{PipelineStageFlag, PipelineStageFlags};
 use yarvk::Buffer;

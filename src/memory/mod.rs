@@ -1,5 +1,4 @@
 use crate::memory::private::PrivateMemoryBackedResource;
-
 use yarvk::binding_resource::BindingResource;
 
 use yarvk::device_memory::UnboundResource;
