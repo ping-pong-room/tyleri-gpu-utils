@@ -1,10 +1,8 @@
+use crate::FxDashMap;
 use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
 use derive_more::{Deref, DerefMut};
 use rayon::iter::ParallelIterator;
 use rayon::iter::{IntoParallelIterator, ParallelDrainRange};
-use rustc_hash::FxHasher;
-use std::hash::BuildHasherDefault;
 use std::sync::Arc;
 use std::thread::ThreadId;
 use yarvk::command::command_buffer::Level::{PRIMARY, SECONDARY};
@@ -34,8 +32,8 @@ struct ThreadLocalSecondaryBufferMap {
     queue_family: QueueFamilyProperties,
     device: Arc<Device>,
     command_buffer_inheritance_info: Arc<CommandBufferInheritanceInfo>,
-    secondary_buffers: DashMap<ThreadId, ThreadLocalSecondaryBuffer, BuildHasherDefault<FxHasher>>,
-    secondary_buffer_handles: DashMap<u64, ThreadId, BuildHasherDefault<FxHasher>>,
+    secondary_buffers: FxDashMap<ThreadId, ThreadLocalSecondaryBuffer>,
+    secondary_buffer_handles: FxDashMap<u64, ThreadId>,
 }
 
 impl ThreadLocalSecondaryBufferMap {

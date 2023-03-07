@@ -7,13 +7,13 @@ use crate::memory::memory_updater::update_entry::ImageTargetInfo;
 use crate::memory::memory_updater::update_entry::{BufferTargetInfo, CmdCopyBufferTo};
 use crate::memory::{IBufferResource, IImageResource};
 use crate::queue::parallel_recording_queue::ParallelRecordingQueue;
-use dashmap::DashMap;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use yarvk::device_memory::mapped_ranges::MappedRanges;
 
+use crate::FxDashMap;
 use yarvk::pipeline::pipeline_stage_flags::PipelineStageFlags;
 use yarvk::BufferCopy;
 use yarvk::DeviceSize;
@@ -55,9 +55,9 @@ pub struct SubBufferInfo {
 #[derive(Default)]
 pub struct MemoryUpdater {
     staging_size: AtomicU64,
-    pending_images: DashMap<u64 /*image handle*/, PendingImage>,
-    pending_buffers: DashMap<u64 /*image handle*/, PendingBuffer>,
-    no_coherent_regions: DashMap<Arc<AutoMappedDeviceMemory>, Vec<(DeviceSize, DeviceSize)>>,
+    pending_images: FxDashMap<u64 /*image handle*/, PendingImage>,
+    pending_buffers: FxDashMap<u64 /*image handle*/, PendingBuffer>,
+    no_coherent_regions: FxDashMap<Arc<AutoMappedDeviceMemory>, Vec<(DeviceSize, DeviceSize)>>,
 }
 
 impl MemoryUpdater {
@@ -148,7 +148,7 @@ impl MemoryUpdater {
     }
     fn update_pending_images(
         staging_buffer: &Arc<StagingBuffer>,
-        pending_images: DashMap<u64 /*image handle*/, PendingImage>,
+        pending_images: FxDashMap<u64 /*image handle*/, PendingImage>,
         queue: &ParallelRecordingQueue,
     ) {
         if !pending_images.is_empty() {
@@ -196,7 +196,7 @@ impl MemoryUpdater {
     }
     pub fn update_pending_buffers(
         staging_buffer: &Arc<StagingBuffer>,
-        pending_buffers: DashMap<u64 /*image handle*/, PendingBuffer>,
+        pending_buffers: FxDashMap<u64 /*image handle*/, PendingBuffer>,
         queue: &ParallelRecordingQueue,
     ) {
         if !pending_buffers.is_empty() {
