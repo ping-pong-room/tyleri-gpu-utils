@@ -1,9 +1,10 @@
 #![feature(trait_upcasting)]
 
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use rustc_hash::FxHasher;
 use std::hash::BuildHasherDefault;
 
+pub mod descriptor;
 pub mod memory;
 pub mod queue;
 pub mod thread;
