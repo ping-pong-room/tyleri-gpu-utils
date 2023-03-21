@@ -1,4 +1,4 @@
-use crate::memory::MemoryResource;
+use crate::memory::MemBakRes;
 use std::sync::Arc;
 use yarvk::barrier::{BufferMemoryBarrier, ImageMemoryBarrier};
 use yarvk::command::command_buffer::CommandBuffer;
@@ -30,7 +30,7 @@ pub struct ImageTargetInfo {
     pub(crate) image_layout: ImageLayout,
 }
 
-impl CmdCopyBufferTo for MemoryResource<Image> {
+impl CmdCopyBufferTo for MemBakRes<Image> {
     type Region = BufferImageCopy;
     type TargetInfo = ImageTargetInfo;
 
@@ -99,7 +99,7 @@ pub struct BufferTargetInfo {
     pub(crate) access_mask: AccessFlags,
 }
 
-impl CmdCopyBufferTo for MemoryResource<Buffer> {
+impl CmdCopyBufferTo for MemBakRes<Buffer> {
     type Region = BufferCopy;
     type TargetInfo = BufferTargetInfo;
 

@@ -1,6 +1,6 @@
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::private::PrivateMemoryBackedResource;
-use crate::memory::{MemoryBackedResource, MemoryResource};
+use crate::memory::{MemBakRes, MemoryBackedResource};
 use std::sync::Arc;
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
@@ -64,7 +64,7 @@ impl<T: UnboundResource> MemoryBackedResource for DedicatedResourceMemory<T> {}
 pub fn new_dedicated_resource<T: UnboundResource + 'static>(
     resource: T,
     memory_type: &MemoryType,
-) -> Result<Arc<MemoryResource<T::RawTy>>, yarvk::Result> {
+) -> Result<Arc<MemBakRes<T::RawTy>>, yarvk::Result> {
     let memory_requirements = resource.get_memory_requirements();
     let device_memory = DeviceMemory::builder(memory_type, resource.device())
         .allocation_size(memory_requirements.size)
@@ -74,5 +74,5 @@ pub fn new_dedicated_resource<T: UnboundResource + 'static>(
     Ok(Arc::new(DedicatedResourceMemory::<T> {
         object: resource,
         device_memory: Arc::new(AutoMappedDeviceMemory::new(device_memory)),
-    }) as Arc<MemoryResource<T::RawTy>>)
+    }) as Arc<MemBakRes<T::RawTy>>)
 }

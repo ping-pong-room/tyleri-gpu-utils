@@ -1,6 +1,6 @@
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::private::PrivateMemoryBackedResource;
-use crate::memory::{MemoryBackedResource, MemoryObjectBuilder, MemoryResource};
+use crate::memory::{MemBakRes, MemoryBackedResource, MemoryObjectBuilder};
 use crate::thread::RayonSplit;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
@@ -76,7 +76,7 @@ impl ArrayDeviceMemory {
         built: T,
         counts: usize,
         memory_type: &MemoryType,
-    ) -> Result<Vec<Arc<MemoryResource<T::RawTy>>>, yarvk::Result> {
+    ) -> Result<Vec<Arc<MemBakRes<T::RawTy>>>, yarvk::Result> {
         let mut results = Vec::with_capacity(counts);
         let unbound = built;
         let memory_requirements = unbound.get_memory_requirements();
@@ -111,7 +111,7 @@ impl ArrayDeviceMemory {
                 vec.push(Arc::new(ArrayMemoryObject::<T> {
                     object: item,
                     device_memory: device_memory.clone(),
-                }) as Arc<MemoryResource<T::RawTy>>);
+                }) as Arc<MemBakRes<T::RawTy>>);
             }
         }
         Ok(vec)
@@ -124,7 +124,7 @@ impl ArrayDeviceMemory {
         object_builder: &Builder,
         counts: usize,
         memory_type: &MemoryType,
-    ) -> Result<Vec<Arc<MemoryResource<T::RawTy>>>, yarvk::Result> {
+    ) -> Result<Vec<Arc<MemBakRes<T::RawTy>>>, yarvk::Result> {
         let unbound = object_builder.build()?;
         Self::new_with_built(device, object_builder, unbound, counts, memory_type)
     }

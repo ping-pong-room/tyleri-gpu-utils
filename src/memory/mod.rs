@@ -39,10 +39,10 @@ pub fn try_memory_type<T>(
     None
 }
 
-pub type MemoryResource<T> = dyn MemoryBackedResource<RawTy = T>;
+pub type MemBakRes<T> = dyn MemoryBackedResource<RawTy = T>;
 
-pub type IBufferResource = MemoryResource<Buffer>;
-pub type IImageResource = MemoryResource<Image>;
+pub type IMemBakBuf = MemBakRes<Buffer>;
+pub type IMemBakImg = MemBakRes<Image>;
 
 pub trait MemoryBackedResource: BindingResource + PrivateMemoryBackedResource {}
 

@@ -5,7 +5,7 @@ use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::memory_updater::staging_buffer::StagingBuffer;
 use crate::memory::memory_updater::update_entry::ImageTargetInfo;
 use crate::memory::memory_updater::update_entry::{BufferTargetInfo, CmdCopyBufferTo};
-use crate::memory::{IBufferResource, IImageResource};
+use crate::memory::{IMemBakBuf, IMemBakImg};
 use crate::queue::parallel_recording_queue::ParallelRecordingQueue;
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::*;
@@ -24,7 +24,7 @@ use yarvk::{Extent3D, Handle};
 
 type WriteFn = dyn Fn(&mut [u8]) + Send + Sync;
 struct PendingImage {
-    image: Arc<IImageResource>,
+    image: Arc<IMemBakImg>,
     pipeline_stage_flags: PipelineStageFlags,
     regions: Vec<SubresourceInfo>,
 }
@@ -40,7 +40,7 @@ struct SubresourceInfo {
 }
 
 pub struct PendingBuffer {
-    buffer: Arc<IBufferResource>,
+    buffer: Arc<IMemBakBuf>,
     pipeline_stage_flags: PipelineStageFlags,
     sub_info: Vec<SubBufferInfo>,
 }
@@ -63,7 +63,7 @@ pub struct MemoryUpdater {
 impl MemoryUpdater {
     pub fn add_image(
         &self,
-        image: Arc<IImageResource>,
+        image: Arc<IMemBakImg>,
         format_size_in_bytes: u64,
         image_subresource: ImageSubresourceLayers,
         image_offset: Offset3D,
@@ -100,7 +100,7 @@ impl MemoryUpdater {
 
     pub fn add_buffer(
         &self,
-        buffer: &mut Arc<IBufferResource>,
+        buffer: &mut Arc<IMemBakBuf>,
         offset: DeviceSize,
         size: DeviceSize,
         access_mask: AccessFlags,
