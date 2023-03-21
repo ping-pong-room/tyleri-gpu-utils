@@ -28,7 +28,7 @@ pub fn try_memory_type<T>(
         {
             if let Some(required_flags) = required_flags {
                 if memory_type.property_flags & required_flags != required_flags {
-                    return None;
+                    continue;
                 }
             }
             if let Some(result) = f(memory_type) {

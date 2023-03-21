@@ -4,7 +4,9 @@ use std::sync::Arc;
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
 use yarvk::device_memory::{DeviceMemory, IMemoryRequirements, UnboundResource};
-use yarvk::{BoundContinuousBuffer, BufferUsageFlags, ContinuousBuffer, WHOLE_SIZE};
+use yarvk::{
+    BoundContinuousBuffer, BufferUsageFlags, ContinuousBuffer, MemoryPropertyFlags, WHOLE_SIZE,
+};
 use yarvk::{Buffer, DeviceSize};
 
 pub struct StagingBuffer {
@@ -47,7 +49,7 @@ impl StagingBuffer {
         let device_memory = try_memory_type(
             buffer.get_memory_requirements(),
             memory_properties,
-            None,
+            Some(MemoryPropertyFlags::HOST_VISIBLE),
             size,
             |memory_type| {
                 DeviceMemory::builder(memory_type, device)
