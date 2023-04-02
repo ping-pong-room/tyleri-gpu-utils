@@ -1,7 +1,7 @@
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::private::PrivateMemoryBackedResource;
 use crate::memory::{MemBakRes, MemoryBackedResource, MemoryObjectBuilder};
-use crate::thread::RayonSplit;
+use crate::thread::parallel_vector_group::ParGroup;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -100,7 +100,7 @@ impl ArrayDeviceMemory {
             memory_offset: 0,
         });
         let mut results = results
-            .rayon_split()
+            .split_for_par()
             .into_par_iter()
             .map(|chunk| T::bind_memories(device, chunk).unwrap())
             .collect::<Vec<_>>();

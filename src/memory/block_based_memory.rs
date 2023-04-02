@@ -2,7 +2,10 @@ use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::block_based_memory::chunk::Chunk;
 use crate::memory::private::PrivateMemoryBackedResource;
 use crate::memory::{MemBakRes, MemoryBackedResource};
+use crate::thread::parallel_vector_group::ParGroup;
 use derive_more::{Deref, DerefMut};
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -113,22 +116,6 @@ impl BlockBasedAllocator {
             chunks: Default::default(),
         })
     }
-    pub fn capacity(&self, len: u64) -> Result<(), yarvk::Result> {
-        // we allocate the space twice then asked, to make sure the memory is big enough to hold
-        // resource with any alignment
-        let len = len * 2;
-        let device_memory = DeviceMemory::builder(&self.memory_type, &self.device)
-            .allocation_size(len)
-            .build()?;
-        self.chunks.write().unwrap().insert(
-            len,
-            VkChunk {
-                chunk: Chunk::new(len),
-                device_memory: Arc::new(AutoMappedDeviceMemory::new(device_memory)),
-            },
-        );
-        Ok(())
-    }
     fn capacity_with_allocate(
         device: &Arc<Device>,
         memory_type: &MemoryType,
@@ -207,22 +194,25 @@ impl BlockBasedAllocator {
             allocator: self.clone(),
         }))
     }
-    pub fn allocate2<T: UnboundResource + IMemoryRequirements + 'static>(
+    pub fn par_allocate<T: UnboundResource + IMemoryRequirements + 'static>(
         self: &Arc<Self>,
         values: impl IntoIterator<Item = T>,
+        mut hint_size: Option<u64>,
     ) -> Result<Vec<Arc<MemBakRes<T::RawTy>>>, yarvk::Result> {
         let values = values.into_iter();
         // TODO do not use mutable key type
         let mut allocated_block_infos = FxHashMap::default();
-        let mut bind_memory_info = Vec::with_capacity(values.size_hint().0);
+        let mut bind_memory_infos = Vec::with_capacity(values.size_hint().0);
         let mut block_indices = Vec::with_capacity(values.size_hint().0);
         for t in values {
             let memory_requirements = t.get_memory_requirements();
+            let required_size = memory_requirements.size;
+            let required_alignment = memory_requirements.alignment;
             let mut block_index = None;
             let block_index = {
                 let mut chunks = self.chunks.write().unwrap();
                 for (len, chunk) in chunks.iter_mut().rev() {
-                    match chunk.allocate(memory_requirements.size, memory_requirements.alignment) {
+                    match chunk.allocate(required_size, required_alignment) {
                         None => {
                             continue;
                         }
@@ -238,16 +228,25 @@ impl BlockBasedAllocator {
                 match block_index {
                     None => {
                         let max_chunk_size = match chunks.iter().rev().next() {
-                            None => memory_requirements.size,
+                            None => required_size,
                             Some((_, chunk)) => chunk.device_memory.size,
                         };
 
+                        // may over allocated too much, fix this if this is a problem.
+                        let willing_size = std::cmp::max(
+                            max_chunk_size * 2,
+                            if let Some(hint_size) = hint_size {
+                                hint_size
+                            } else {
+                                required_size
+                            },
+                        );
                         Self::capacity_with_allocate(
                             &self.device,
                             &self.memory_type,
                             &mut chunks,
-                            std::cmp::max(max_chunk_size * 2, memory_requirements.size),
-                            memory_requirements.size,
+                            willing_size,
+                            required_size,
                         )?
                     }
                     Some(block_index) => block_index,
@@ -273,7 +272,7 @@ impl BlockBasedAllocator {
             .collect();
         for (device_memory, vec) in &mut allocated_block_infos {
             while let Some((resource, block_index)) = vec.pop() {
-                bind_memory_info.push(BindMemoryInfo {
+                bind_memory_infos.push(BindMemoryInfo {
                     resource,
                     memory: locks_holder.get(device_memory).unwrap(),
                     memory_offset: block_index.offset,
@@ -281,26 +280,43 @@ impl BlockBasedAllocator {
                 block_indices.push(block_index);
             }
         }
-        let result = T::bind_memories(&self.device, bind_memory_info)?
-            .into_iter()
-            .enumerate()
-            .map(|(index, resource)| {
-                Arc::new(BlockBasedResource::<T> {
-                    resource,
-                    block_index: block_indices[index].clone(),
-                    allocator: self.clone(),
-                }) as Arc<MemBakRes<T::RawTy>>
+        let binds: Vec<_> = bind_memory_infos
+            .split_for_par()
+            .into_par_iter()
+            .map(|infos| {
+                // TODO unwrap
+                T::bind_memories(&self.device, infos)
+                    .unwrap()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, resource)| {
+                        Arc::new(BlockBasedResource::<T> {
+                            resource,
+                            block_index: block_indices[index].clone(),
+                            allocator: self.clone(),
+                        }) as Arc<MemBakRes<T::RawTy>>
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
+        let mut result = Vec::new();
+        for mut bind in binds {
+            result.append(&mut bind);
+        }
         Ok(result)
     }
     fn free(&self, block_index: &BlockIndex) {
-        let mut chunks = self.chunks.write().unwrap();
-        if let Some(chunk) = chunks.get_mut(&block_index.chunk_index) {
-            chunk.free(block_index.offset);
-            if chunk.is_unused() {
-                chunks.remove(&block_index.chunk_index);
+        let mut removed_chunk = None;
+        {
+            let mut chunks = self.chunks.write().unwrap();
+            if let Some(chunk) = chunks.get_mut(&block_index.chunk_index) {
+                chunk.free(block_index.offset);
+                if chunk.is_unused() {
+                    removed_chunk = chunks.remove(&block_index.chunk_index);
+                }
             }
         }
+        // drop device memory out of locks
+        drop(removed_chunk);
     }
 }
