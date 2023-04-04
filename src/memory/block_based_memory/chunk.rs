@@ -14,6 +14,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    #[cfg(test)]
     pub fn new(len: u64) -> Self {
         assert_ne!(len, 0);
         let mut blocks = FxHashMap::default();

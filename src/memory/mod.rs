@@ -1,12 +1,12 @@
-use crate::memory::private::PrivateMemoryBackedResource;
 use yarvk::binding_resource::BindingResource;
-
 use yarvk::device_memory::UnboundResource;
 use yarvk::physical_device::memory_properties::{MemoryType, PhysicalDeviceMemoryProperties};
 use yarvk::{
     Buffer, ContinuousBufferBuilder, ContinuousImageBuilder, DeviceSize, Image, MemoryPropertyFlags,
 };
 use yarvk::{MemoryRequirements, UnboundContinuousBuffer, UnboundContinuousImage};
+
+use crate::memory::private::PrivateMemoryBackedResource;
 
 pub mod array_device_memory;
 mod auto_mapped_device_memory;

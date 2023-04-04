@@ -197,7 +197,7 @@ impl BlockBasedAllocator {
     pub fn par_allocate<T: UnboundResource + IMemoryRequirements + 'static>(
         self: &Arc<Self>,
         values: impl IntoIterator<Item = T>,
-        mut hint_size: Option<u64>,
+        hint_size: Option<u64>,
     ) -> Result<Vec<Arc<MemBakRes<T::RawTy>>>, yarvk::Result> {
         let values = values.into_iter();
         // TODO do not use mutable key type

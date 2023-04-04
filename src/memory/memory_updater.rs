@@ -63,7 +63,7 @@ pub struct MemoryUpdater {
 impl MemoryUpdater {
     pub fn add_image(
         &self,
-        image: Arc<IMemBakImg>,
+        image: &Arc<IMemBakImg>,
         format_size_in_bytes: u64,
         image_subresource: ImageSubresourceLayers,
         image_offset: Offset3D,
@@ -82,7 +82,7 @@ impl MemoryUpdater {
         self.pending_images
             .entry(image.raw().handle())
             .or_insert(PendingImage {
-                image,
+                image: image.clone(),
                 pipeline_stage_flags,
                 regions: vec![],
             })
