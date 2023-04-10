@@ -18,7 +18,7 @@ use yarvk::queue::submit_info::{SubmitInfo, Submittable};
 use yarvk::queue::Queue;
 use yarvk::Handle;
 
-type SecondaryCommandBuffer = CommandBuffer<{ SECONDARY }, { RECORDING }, { OUTSIDE }>;
+pub type SecondaryCommandBuffer = CommandBuffer<{ SECONDARY }, { RECORDING }, { OUTSIDE }>;
 
 #[derive(Deref, DerefMut)]
 struct ThreadLocalSecondaryBuffer {
@@ -157,9 +157,8 @@ impl ParallelRecordingQueue {
         let fence = self.fence.take().unwrap();
         let command_buffer = command_buffer
             .record(|primary_command_buffer| {
-                primary_command_buffer.cmd_execute_commands(
-                    &mut self.thread_local_secondary_buffer_map.collect_dirty(),
-                );
+                primary_command_buffer
+                    .cmd_execute_commands(self.thread_local_secondary_buffer_map.collect_dirty());
                 Ok(())
             })
             .unwrap();

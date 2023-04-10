@@ -1,6 +1,8 @@
-use crate::memory::block_based_memory::unused_blocks::UnusedBlocks;
 use rustc_hash::FxHashMap;
 
+use crate::memory::block_based_memory::unused_blocks::UnusedBlocks;
+
+#[derive(Clone)]
 struct Block {
     len: u64,
     used: bool,
@@ -8,13 +10,13 @@ struct Block {
     next: Option<u64>,
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     unused_blocks: UnusedBlocks,
     blocks: FxHashMap<u64 /*offset*/, Block>,
 }
 
 impl Chunk {
-    #[cfg(test)]
     pub fn new(len: u64) -> Self {
         assert_ne!(len, 0);
         let mut blocks = FxHashMap::default();
@@ -154,6 +156,35 @@ impl Chunk {
         }
         result
     }
+    pub fn expand(&mut self, len: u64) {
+        let mut block = self.blocks.get(&0).unwrap();
+        while let Some(offset) = block.next {
+            block = self.blocks.get(&offset).unwrap();
+        }
+        let last_block = block;
+        let last_offset = block.pre.unwrap_or(0);
+        // check if it is unused
+        if last_block.used {
+            let new_block_offset = last_offset + last_block.len;
+            self.blocks.insert(
+                new_block_offset,
+                Block {
+                    len,
+                    used: false,
+                    pre: Some(last_offset),
+                    next: None,
+                },
+            );
+            let last_block = self.blocks.get_mut(&last_offset).unwrap();
+            last_block.next = Some(new_block_offset);
+            self.unused_blocks.insert(new_block_offset, len);
+        } else {
+            let last_block = self.blocks.get_mut(&last_offset).unwrap();
+            self.unused_blocks.remove(last_offset, last_block.len);
+            last_block.len += len;
+            self.unused_blocks.insert(last_offset, last_block.len);
+        }
+    }
     pub fn free(&mut self, offset: u64) {
         unsafe {
             if let Some(mut block) = self.blocks.remove(&offset) {
@@ -292,4 +323,41 @@ fn multiple_candidate_test() {
     assert_eq!(iter_blocks(&chunk.blocks).as_slice(), [0, 1, 3, 4, 6, 7]);
     assert_eq!(chunk.unused_blocks.get(&2).unwrap().len(), 2);
     assert_eq!(chunk.allocate(2, 2), Some(4))
+}
+
+#[test]
+fn expand_test() {
+    let mut chunk = Chunk::new(128);
+    let block = chunk.blocks.get(&0).unwrap();
+    assert_eq!(block.used, false);
+    assert_eq!(block.len, 128);
+    assert_eq!(chunk.unused_blocks.len(), 1);
+    let set = chunk.unused_blocks.get(&128).unwrap();
+    assert_eq!(set.len(), 1);
+    assert!(set.contains(&0));
+
+    chunk.expand(128);
+    let block = chunk.blocks.get(&0).unwrap();
+    assert_eq!(block.used, false);
+    assert_eq!(block.len, 256);
+    assert_eq!(chunk.unused_blocks.len(), 1);
+    let set = chunk.unused_blocks.get(&256).unwrap();
+    assert_eq!(set.len(), 1);
+    assert!(set.contains(&0));
+
+    let mut chunk = Chunk::new(128);
+    chunk.allocate(128, 1);
+    let block = chunk.blocks.get(&0).unwrap();
+    assert_eq!(block.used, true);
+    assert_eq!(block.len, 128);
+    assert_eq!(chunk.unused_blocks.len(), 0);
+
+    chunk.expand(128);
+    let block = chunk.blocks.get(&0).unwrap();
+    assert_eq!(block.used, true);
+    assert_eq!(block.len, 128);
+    assert_eq!(chunk.unused_blocks.len(), 1);
+    let set = chunk.unused_blocks.get(&128).unwrap();
+    assert_eq!(set.len(), 1);
+    assert!(set.contains(&128));
 }

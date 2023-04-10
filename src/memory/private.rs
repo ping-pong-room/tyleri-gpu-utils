@@ -5,8 +5,8 @@ use yarvk::MemoryPropertyFlags;
 
 pub trait PrivateMemoryBackedResource {
     fn memory_property_flags(&self) -> MemoryPropertyFlags;
-    fn memory_memory(
-        &mut self,
+    fn map_memory(
+        &self,
         offset: DeviceSize,
         size: DeviceSize,
         f: &dyn Fn(&mut [u8]),

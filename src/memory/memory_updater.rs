@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use yarvk::device_memory::mapped_ranges::MappedRanges;
 
+use crate::memory::block_based_memory::bindless_buffer::BindlessBuffer;
 use crate::FxDashMap;
 use yarvk::pipeline::pipeline_stage_flags::PipelineStageFlags;
 use yarvk::BufferCopy;
@@ -97,10 +98,23 @@ impl MemoryUpdater {
                 image_layout,
             });
     }
-
-    pub fn add_buffer(
+    pub fn add_buffer<'a>(
+        &'a self,
+        buffer: &'a mut Arc<IMemBakBuf>,
+        offset: DeviceSize,
+        size: DeviceSize,
+        access_mask: AccessFlags,
+        pipeline_stage_flags: PipelineStageFlags,
+        f: Arc<WriteFn>,
+    ) {
+        let _buffer = Arc::get_mut(buffer).expect("buffer is holding by others");
+        unsafe {
+            self.add_buffer_uncheck(buffer, offset, size, access_mask, pipeline_stage_flags, f)
+        }
+    }
+    unsafe fn add_buffer_uncheck(
         &self,
-        buffer: &mut Arc<IMemBakBuf>,
+        buffer: &Arc<IMemBakBuf>,
         offset: DeviceSize,
         size: DeviceSize,
         access_mask: AccessFlags,
@@ -132,8 +146,7 @@ impl MemoryUpdater {
             .memory_property_flags()
             .contains(MemoryPropertyFlags::HOST_VISIBLE)
         {
-            let mut_buffer = Arc::get_mut(buffer).expect("buffer is using");
-            mut_buffer.memory_memory(offset, size, f.as_ref()).unwrap();
+            buffer.map_memory(offset, size, f.as_ref()).unwrap();
         }
         if !buffer
             .memory_property_flags()
@@ -144,6 +157,27 @@ impl MemoryUpdater {
                 .entry(device_memory)
                 .or_default()
                 .push((buffer.offset() + offset, buffer.size()));
+        }
+    }
+    pub fn add_bindless_buffer(
+        &self,
+        buffer: &mut Arc<BindlessBuffer>,
+        offset: DeviceSize,
+        size: DeviceSize,
+        access_mask: AccessFlags,
+        pipeline_stage_flags: PipelineStageFlags,
+        f: Arc<WriteFn>,
+    ) {
+        let _buffer = Arc::get_mut(buffer).expect("buffer is holding by others");
+        unsafe {
+            self.add_buffer_uncheck(
+                &buffer.bindless_buffer.get_buffer(),
+                buffer.offset + offset,
+                size,
+                access_mask,
+                pipeline_stage_flags,
+                f,
+            );
         }
     }
     fn update_pending_images(
@@ -194,7 +228,7 @@ impl MemoryUpdater {
                 });
         }
     }
-    pub fn update_pending_buffers(
+    fn update_pending_buffers(
         staging_buffer: &Arc<StagingBuffer>,
         pending_buffers: FxDashMap<u64 /*image handle*/, PendingBuffer>,
         queue: &ParallelRecordingQueue,

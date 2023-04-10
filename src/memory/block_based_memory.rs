@@ -16,6 +16,7 @@ use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::DeviceSize;
 use yarvk::MemoryPropertyFlags;
 
+pub mod bindless_buffer;
 mod chunk;
 mod unused_blocks;
 
@@ -54,8 +55,8 @@ impl<T: UnboundResource> PrivateMemoryBackedResource for BlockBasedResource<T> {
         self.allocator.memory_type.property_flags
     }
 
-    fn memory_memory(
-        &mut self,
+    fn map_memory(
+        &self,
         offset: DeviceSize,
         size: DeviceSize,
         f: &dyn Fn(&mut [u8]),

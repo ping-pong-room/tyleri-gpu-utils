@@ -12,3 +12,5 @@ yarvk = { path = "../yarvk/yarvk" }
 rayon = "1.5.3"
 dashmap = {version = "5.4.0",  features = ["rayon"] }
 phf = { version = "0.11", features = ["macros"] }
+arc-swap = "1.6.0"
+parking_lot = "0.12.1"

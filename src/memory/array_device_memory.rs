@@ -46,8 +46,8 @@ impl<T: UnboundResource> PrivateMemoryBackedResource for ArrayMemoryObject<T> {
     fn memory_property_flags(&self) -> MemoryPropertyFlags {
         self.device_memory.memory_type.property_flags
     }
-    fn memory_memory(
-        &mut self,
+    fn map_memory(
+        &self,
         offset: DeviceSize,
         size: DeviceSize,
         f: &dyn Fn(&mut [u8]),

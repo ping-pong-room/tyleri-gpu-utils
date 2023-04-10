@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::ops::Deref;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct UnusedBlocks(BTreeMap<u64 /*len*/, FxHashSet<u64>>);
 
 impl UnusedBlocks {
