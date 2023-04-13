@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::memory::block_based_memory::unused_blocks::UnusedBlocks;
+use crate::memory::get_aligned_offset;
 
 #[derive(Clone)]
 struct Block {
@@ -84,8 +85,8 @@ impl Chunk {
             for offset in set.iter() {
                 let offset = *offset;
                 let block = self.blocks.get_mut(&offset)?;
-                let offset_mod_alignment = offset % alignment;
-                if offset_mod_alignment == 0 {
+                let aligned_offset = get_aligned_offset(offset, alignment);
+                if aligned_offset == offset {
                     if block.len < len {
                         // too small
                         continue;
@@ -109,7 +110,7 @@ impl Chunk {
                         return Some(offset);
                     }
                 } else {
-                    let wasted_len = alignment - offset_mod_alignment;
+                    let wasted_len = aligned_offset - offset;
                     let available_len = block.len - wasted_len;
                     if available_len < len {
                         // not enough for alignment

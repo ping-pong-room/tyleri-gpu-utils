@@ -159,9 +159,9 @@ impl MemoryUpdater {
                 .push((buffer.offset() + offset, buffer.size()));
         }
     }
-    pub fn add_bindless_buffer(
+    pub fn add_bindless_buffer<T: Sized + 'static + Send + Sync>(
         &self,
-        buffer: &mut Arc<BindlessBuffer>,
+        buffer: &mut Arc<BindlessBuffer<T>>,
         offset: DeviceSize,
         size: DeviceSize,
         access_mask: AccessFlags,
@@ -172,7 +172,7 @@ impl MemoryUpdater {
         unsafe {
             self.add_buffer_uncheck(
                 &buffer.bindless_buffer.get_buffer(),
-                buffer.offset + offset,
+                (buffer.offset * std::mem::size_of::<T>()) as DeviceSize + offset,
                 size,
                 access_mask,
                 pipeline_stage_flags,

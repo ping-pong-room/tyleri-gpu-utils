@@ -1,4 +1,4 @@
-use crate::memory::try_memory_type;
+use crate::memory::{get_aligned_offset, try_memory_type};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use yarvk::binding_resource::BindingResource;
@@ -73,9 +73,28 @@ impl StagingBuffer {
         size: DeviceSize,
         f: impl Fn(&mut [u8]),
     ) -> Result<DeviceSize, yarvk::Result> {
-        let offset = self.offset.fetch_add(size, Ordering::Relaxed);
-        let slice = self.device_memory.get_memory(offset, size)?;
+        let mut aligned_offset;
+        loop {
+            let current_offset = self.offset.load(Ordering::Relaxed);
+            aligned_offset = get_aligned_offset(
+                current_offset,
+                self.buffer.get_memory_requirements().alignment,
+            );
+            if self
+                .offset
+                .compare_exchange(
+                    current_offset,
+                    aligned_offset,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                break;
+            }
+        }
+        let slice = self.device_memory.get_memory(aligned_offset, size)?;
         f(slice);
-        Ok(offset)
+        Ok(aligned_offset)
     }
 }

@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
@@ -6,33 +8,39 @@ use rayon::iter::ParallelIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
-use yarvk::device_memory::mapped_ranges::MappedRanges;
 use yarvk::device_memory::{DeviceMemory, IMemoryRequirements, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::pipeline::pipeline_stage_flags::PipelineStageFlag;
 use yarvk::{AccessFlags, DeviceSize};
-use yarvk::{BoundContinuousBuffer, ContinuousBufferBuilder, IBuffer, MemoryPropertyFlags};
-use yarvk::{Buffer, BufferCopy};
+use yarvk::{BoundContinuousBuffer, ContinuousBufferBuilder, MemoryPropertyFlags};
+use yarvk::{Buffer, BufferUsageFlags, ContinuousBuffer};
 
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::block_based_memory::chunk::Chunk;
 use crate::memory::memory_updater::MemoryUpdater;
 use crate::memory::private::PrivateMemoryBackedResource;
-use crate::memory::{IMemBakBuf, MemoryBackedResource};
+use crate::memory::{
+    cmd_copy_buffer_from_start, copy_buffer_from_start, IMemBakBuf, MemoryBackedResource,
+};
 use crate::queue::parallel_recording_queue::ParallelRecordingQueue;
 
-struct DedicatedBuffer {
+struct DedicatedBuffer<T: Sized + 'static + Send + Sync> {
     buffer: BoundContinuousBuffer,
     device_memory: Arc<AutoMappedDeviceMemory>,
+    _phantom_data: PhantomData<T>,
 }
 
-impl DedicatedBuffer {
+impl<T: Sized + 'static + Send + Sync> DedicatedBuffer<T> {
     fn new(
+        device: &Arc<Device>,
         memory_type: &MemoryType,
-        buffer_builder: &mut ContinuousBufferBuilder,
-        size: DeviceSize,
+        usage: BufferUsageFlags,
+        len: usize,
     ) -> Result<Self, yarvk::Result> {
+        let size = (len * std::mem::size_of::<T>()) as DeviceSize;
+        let mut buffer_builder = ContinuousBuffer::builder(device);
         buffer_builder.size(size);
+        buffer_builder.usage(usage);
         let buffer = buffer_builder.build()?;
         let device_memory = DeviceMemory::builder(&memory_type, buffer.device())
             .allocation_size(size)
@@ -42,11 +50,12 @@ impl DedicatedBuffer {
         Ok(Self {
             buffer,
             device_memory,
+            _phantom_data: Default::default(),
         })
     }
 }
 
-impl BindingResource for DedicatedBuffer {
+impl<T: Sized + 'static + Send + Sync> BindingResource for DedicatedBuffer<T> {
     type RawTy = Buffer;
 
     fn raw(&self) -> &Self::RawTy {
@@ -70,7 +79,7 @@ impl BindingResource for DedicatedBuffer {
     }
 }
 
-impl PrivateMemoryBackedResource for DedicatedBuffer {
+impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for DedicatedBuffer<T> {
     fn memory_property_flags(&self) -> MemoryPropertyFlags {
         self.device_memory.memory_type.property_flags
     }
@@ -91,41 +100,46 @@ impl PrivateMemoryBackedResource for DedicatedBuffer {
     }
 }
 
-impl MemoryBackedResource for DedicatedBuffer {}
+impl<T: Sized + 'static + Send + Sync> MemoryBackedResource for DedicatedBuffer<T> {}
 
 #[derive(Clone)]
-pub struct BindlessBuffer {
-    pub offset: DeviceSize,
-    pub size: DeviceSize,
-    pub(crate) bindless_buffer: Arc<BindlessBufferAllocator>,
+pub struct BindlessBuffer<T: Sized + 'static + Send + Sync> {
+    pub offset: usize,
+    pub len: usize,
+    pub(crate) bindless_buffer: Arc<BindlessBufferAllocator<T>>,
 }
 
-impl Drop for BindlessBuffer {
+impl<T: Sized + 'static + Send + Sync> Drop for BindlessBuffer<T> {
     fn drop(&mut self) {
-        self.bindless_buffer.chunk.lock().free(self.offset);
+        self.bindless_buffer
+            .chunk
+            .lock()
+            .free((self.offset * std::mem::size_of::<T>()) as _);
     }
 }
 
-pub struct BindlessBufferAllocator {
-    buffer_builder: ContinuousBufferBuilder,
-    dedicated_buffer: ArcSwap<DedicatedBuffer>,
+pub struct BindlessBufferAllocator<T: Sized + 'static + Send + Sync> {
+    usage: BufferUsageFlags,
+    dedicated_buffer: ArcSwap<DedicatedBuffer<T>>,
     chunk: Mutex<Chunk>,
 }
 
-impl BindlessBufferAllocator {
+impl<T: Sized + 'static + Send + Sync> BindlessBufferAllocator<T> {
     pub fn new(
-        size: DeviceSize,
+        device: &Arc<Device>,
+        len: usize,
         memory_type: &MemoryType,
-        mut buffer_builder: ContinuousBufferBuilder,
+        usage: BufferUsageFlags,
     ) -> Result<Arc<Self>, yarvk::Result> {
         let dedicated_buffer = ArcSwap::from(Arc::new(DedicatedBuffer::new(
+            device,
             memory_type,
-            &mut buffer_builder,
-            size,
+            usage,
+            len,
         )?));
-        let chunk = Mutex::new(Chunk::new(size));
+        let chunk = Mutex::new(Chunk::new((len * std::mem::size_of::<T>()) as _));
         Ok(Arc::new(Self {
-            buffer_builder,
+            usage,
             dedicated_buffer,
             chunk,
         }))
@@ -135,54 +149,58 @@ impl BindlessBufferAllocator {
     }
     pub fn allocate<'a>(
         self: &Arc<Self>,
-        data: &[(DeviceSize, Arc<dyn Fn(&mut [u8]) + Send + Sync>)],
+        data: &[(usize /*len*/, Arc<dyn Fn(&mut [T]) + Send + Sync>)],
         queue: &mut ParallelRecordingQueue,
-    ) -> Vec<Arc<BindlessBuffer>> {
+    ) -> Vec<Arc<BindlessBuffer<T>>> {
         let mut chunk = self.chunk.lock();
         let mut result_buffers = vec![
             Arc::new(BindlessBuffer {
                 offset: 0,
-                size: 0,
+                len: 0,
                 bindless_buffer: self.clone(),
             });
             data.len()
         ];
         let mut unallocated = Vec::new();
-        let mut out_of_size = 0;
+        let mut not_allocated_len = 0;
         let dedicated_buffer = self.dedicated_buffer.load();
         let buffer = &dedicated_buffer.buffer;
-        let memory_requirement = buffer.get_memory_requirements().clone();
-        let alignment = memory_requirement.alignment;
-        data.iter().enumerate().for_each(|(index, (size, _))| {
-            match chunk.allocate(*size as _, alignment as _) {
+        data.iter().enumerate().for_each(|(index, (len, _))| {
+            match chunk.allocate((len * std::mem::size_of::<T>()) as _, 1 as _) {
                 Some(offset) => {
                     let buffer = Arc::get_mut(&mut result_buffers[index]).unwrap();
-                    buffer.offset = offset;
-                    buffer.size = *size;
+                    buffer.offset = offset as usize / std::mem::size_of::<T>();
+                    buffer.len = *len;
                 }
                 None => {
                     unallocated.push(index);
-                    out_of_size += size;
+                    not_allocated_len += len;
                 }
             }
         });
         if !unallocated.is_empty() {
             let device_memory = &dedicated_buffer.device_memory;
-            let new_alloc_size = std::cmp::max(buffer.size(), out_of_size * 2);
+            let new_alloc_len = std::cmp::max(
+                buffer.size() as usize / std::mem::size_of::<T>(),
+                not_allocated_len,
+            );
             let new_dedicated_buffer = DedicatedBuffer::new(
+                &buffer.device,
                 &device_memory.memory_type,
-                &mut self.buffer_builder.clone(),
-                new_alloc_size,
+                self.usage,
+                new_alloc_len,
             )
             .unwrap();
             let new_dedicated_buffer = Arc::new(new_dedicated_buffer);
-            chunk.expand(new_alloc_size);
+            chunk.expand((new_alloc_len * std::mem::size_of::<T>()) as _);
             for index in unallocated {
-                let size = data[index].0;
-                let offset = chunk.allocate(size as _, alignment as _).unwrap();
+                let len = data[index].0;
+                let offset = chunk
+                    .allocate((len * std::mem::size_of::<T>()) as _, 1 as _)
+                    .unwrap();
                 let buffer = Arc::get_mut(&mut result_buffers[index]).unwrap();
-                buffer.offset = offset;
-                buffer.size = size;
+                buffer.offset = offset as usize / std::mem::size_of::<T>();
+                buffer.len = len;
             }
             self.dedicated_buffer.swap(new_dedicated_buffer.clone());
             // can be parallel with above
@@ -192,14 +210,14 @@ impl BindlessBufferAllocator {
                 .property_flags
                 .contains(MemoryPropertyFlags::HOST_VISIBLE)
             {
-                Self::copy_buffer(
+                copy_buffer_from_start(
                     &buffer.device,
                     &dedicated_buffer.device_memory,
                     &new_dedicated_buffer.device_memory,
                     dedicated_buffer.buffer.size(),
                 )
             } else {
-                Self::cmd_copy_buffer_from_offset_0(
+                cmd_copy_buffer_from_start(
                     dedicated_buffer.clone(),
                     new_dedicated_buffer.clone(),
                     dedicated_buffer.size(),
@@ -213,98 +231,26 @@ impl BindlessBufferAllocator {
             .par_iter_mut()
             .enumerate()
             .for_each(|(index, bindless_buffer)| {
-                let (size, f) = &data[index];
+                let (len, f) = &data[index];
+                let f = f.clone();
                 updater.add_bindless_buffer(
                     bindless_buffer,
                     0,
-                    *size,
+                    (len * std::mem::size_of::<T>()) as _,
                     AccessFlags::TRANSFER_WRITE,
                     PipelineStageFlag::Transfer.into(),
-                    f.clone(),
+                    Arc::new(move |slice: &mut [u8]| {
+                        let slice = unsafe {
+                            from_raw_parts_mut(
+                                slice as *mut _ as *mut T,
+                                slice.len() / std::mem::size_of::<T>(),
+                            )
+                        };
+                        f(slice)
+                    }),
                 )
             });
         updater.update(queue);
         result_buffers
-    }
-    fn copy_buffer(
-        device: &Arc<Device>,
-        src_memory: &AutoMappedDeviceMemory,
-        dst_memory: &AutoMappedDeviceMemory,
-        size: DeviceSize,
-    ) {
-        let src_memory = src_memory.get_device_memory();
-        let dst_memory = dst_memory.get_device_memory();
-        if !src_memory
-            .memory_type
-            .property_flags
-            .contains(MemoryPropertyFlags::HOST_COHERENT)
-        {
-            let mut mapped_ranges = MappedRanges::new(&device);
-            mapped_ranges.add_range(&src_memory, 0, size);
-            mapped_ranges.invalidate().unwrap();
-        }
-        let src = src_memory.get_memory(0, size).unwrap();
-        let dst = dst_memory.get_memory(0, size).unwrap();
-        dst.copy_from_slice(src);
-        if !dst_memory
-            .memory_type
-            .property_flags
-            .contains(MemoryPropertyFlags::HOST_COHERENT)
-        {
-            let mut mapped_ranges = MappedRanges::new(&device);
-            mapped_ranges.add_range(&dst_memory, 0, size);
-            mapped_ranges.flush().unwrap();
-        }
-    }
-    fn cmd_copy_buffer_from_offset_0(
-        src: Arc<IBuffer>,
-        dst: Arc<IBuffer>,
-        size: DeviceSize,
-        queue: &mut ParallelRecordingQueue,
-    ) {
-        queue
-            .record(move |command_buffer| {
-                // let begin_barrier = BufferMemoryBarrier::builder(dst.clone())
-                //     .dst_access_mask(AccessFlags::TRANSFER_WRITE)
-                //     .offset(0)
-                //     .size(size)
-                //     .build();
-                //
-                //
-                // let end_barrier = BufferMemoryBarrier::builder(dst.clone())
-                //     .src_access_mask(AccessFlags::TRANSFER_WRITE)
-                //     .dst_access_mask(AccessFlags::SHADER_READ) // whatever, doesn't matter since we don't use it before copy finished.
-                //     .offset(0)
-                //     .size(size)
-                //     .build();
-                //
-                // command_buffer.cmd_pipeline_barrier(
-                //     PipelineStageFlags::new(PipelineStageFlag::BottomOfPipe),
-                //     PipelineStageFlags::new(PipelineStageFlag::Transfer),
-                //     DependencyFlags::empty(),
-                //     [],
-                //     [begin_barrier],
-                //     [],
-                // );
-                command_buffer.cmd_copy_buffer(
-                    src.clone(),
-                    dst.clone(),
-                    &[BufferCopy {
-                        src_offset: 0,
-                        dst_offset: 0,
-                        size,
-                    }],
-                );
-                // command_buffer.cmd_pipeline_barrier(
-                //     PipelineStageFlags::new(PipelineStageFlag::Transfer),
-                //     pipeline_stage_flags,
-                //     DependencyFlags::empty(),
-                //     [],
-                //     [end_barrier],
-                //     [],
-                // );
-                Ok(())
-            })
-            .unwrap();
     }
 }
