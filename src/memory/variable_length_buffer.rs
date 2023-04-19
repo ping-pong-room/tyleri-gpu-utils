@@ -12,7 +12,7 @@ use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
 use crate::memory::private::PrivateMemoryBackedResource;
 use crate::memory::{copy_buffer_from_start, MemoryBackedResource};
 
-pub struct SimpleRingBuffer<T: Sized + 'static + Send + Sync> {
+pub struct VariableLengthBuffer<T: Sized + 'static + Send + Sync> {
     len: usize,
     usage: BufferUsageFlags,
     buffer: BoundContinuousBuffer,
@@ -21,7 +21,7 @@ pub struct SimpleRingBuffer<T: Sized + 'static + Send + Sync> {
     _phantom_data: PhantomData<T>,
 }
 
-impl<T: Sized + 'static + Send + Sync> SimpleRingBuffer<T> {
+impl<T: Sized + 'static + Send + Sync> VariableLengthBuffer<T> {
     pub fn new(
         device: &Arc<Device>,
         memory_type: &MemoryType,
@@ -50,6 +50,14 @@ impl<T: Sized + 'static + Send + Sync> SimpleRingBuffer<T> {
             end: 0,
             _phantom_data: Default::default(),
         }
+    }
+    pub fn clone_new(&self) -> Self {
+        Self::new(
+            self.device(),
+            &self.device_memory.memory_type,
+            self.usage,
+            self.len,
+        )
     }
     pub fn expand_to(&mut self, total_len: usize) {
         if total_len > self.len {
@@ -98,7 +106,7 @@ impl<T: Sized + 'static + Send + Sync> SimpleRingBuffer<T> {
     }
 }
 
-impl<T: Sized + 'static + Send + Sync> BindingResource for SimpleRingBuffer<T> {
+impl<T: Sized + 'static + Send + Sync> BindingResource for VariableLengthBuffer<T> {
     type RawTy = Buffer;
 
     fn raw(&self) -> &Self::RawTy {
@@ -122,7 +130,7 @@ impl<T: Sized + 'static + Send + Sync> BindingResource for SimpleRingBuffer<T> {
     }
 }
 
-impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for SimpleRingBuffer<T> {
+impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for VariableLengthBuffer<T> {
     fn memory_property_flags(&self) -> MemoryPropertyFlags {
         self.device_memory.memory_type.property_flags
     }
@@ -143,4 +151,4 @@ impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for SimpleRin
     }
 }
 
-impl<T: Sized + 'static + Send + Sync> MemoryBackedResource for SimpleRingBuffer<T> {}
+impl<T: Sized + 'static + Send + Sync> MemoryBackedResource for VariableLengthBuffer<T> {}

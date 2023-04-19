@@ -22,7 +22,7 @@ pub mod block_based_memory;
 pub mod dedicated_memory;
 pub mod memory_updater;
 mod private;
-pub mod simple_ring_buffer;
+pub mod variable_length_buffer;
 
 fn get_aligned_offset(offset: DeviceSize, alignment: DeviceSize) -> DeviceSize {
     (offset + alignment - 1) & (alignment).wrapping_neg()
