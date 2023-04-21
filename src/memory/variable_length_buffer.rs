@@ -90,9 +90,11 @@ impl<T: Sized + 'static + Send + Sync> VariableLengthBuffer<T> {
         }
         let data_in_u8 =
             unsafe { std::slice::from_raw_parts(data as *const _ as *const u8, size as _) };
-        self.map_memory(byte_offset, size, &|slice| {
-            slice.copy_from_slice(data_in_u8)
-        })
+        self.map_memory(
+            byte_offset,
+            size,
+            Box::new(|slice: &mut [u8]| slice.copy_from_slice(data_in_u8)),
+        )
         .unwrap();
         let offset = self.end;
         self.end += data.len();
@@ -139,7 +141,7 @@ impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for VariableL
         &self,
         offset: DeviceSize,
         size: DeviceSize,
-        f: &dyn Fn(&mut [u8]),
+        f: Box<dyn FnOnce(&mut [u8])>,
     ) -> Result<(), yarvk::Result> {
         assert!(offset + size <= self.device_memory.size);
         let offset = self.offset() + offset;

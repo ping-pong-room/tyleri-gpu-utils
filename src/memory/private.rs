@@ -9,7 +9,7 @@ pub trait PrivateMemoryBackedResource {
         &self,
         offset: DeviceSize,
         size: DeviceSize,
-        f: &dyn Fn(&mut [u8]),
+        f: Box<dyn FnOnce(&mut [u8])>,
     ) -> Result<(), yarvk::Result>;
     fn get_device_memory(&self) -> Arc<AutoMappedDeviceMemory>;
 }

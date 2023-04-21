@@ -34,8 +34,8 @@ fn copy_buffer_from_start(
     dst_memory: &AutoMappedDeviceMemory,
     size: DeviceSize,
 ) {
-    src_memory.map_memory(0, size, &|_| {}).unwrap();
-    dst_memory.map_memory(0, size, &|_| {}).unwrap();
+    src_memory.map_memory(0, size, Box::new(|_| {})).unwrap();
+    dst_memory.map_memory(0, size, Box::new(|_| {})).unwrap();
     let src_memory = src_memory.get_device_memory();
     let dst_memory = dst_memory.get_device_memory();
     if !src_memory

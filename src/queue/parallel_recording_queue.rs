@@ -48,7 +48,7 @@ impl ThreadLocalSecondaryBufferMap {
     }
     fn record_in_thread_local_buffer(
         &self,
-        f: impl Fn(&mut SecondaryCommandBuffer) -> Result<(), yarvk::Result>,
+        f: impl FnOnce(&mut SecondaryCommandBuffer) -> Result<(), yarvk::Result>,
     ) -> Result<(), yarvk::Result> {
         let thread_id = std::thread::current().id();
         match self.secondary_buffers.entry(thread_id) {
@@ -146,7 +146,7 @@ impl ParallelRecordingQueue {
     }
     pub fn record(
         &self,
-        f: impl Fn(&mut SecondaryCommandBuffer) -> Result<(), yarvk::Result>,
+        f: impl FnOnce(&mut SecondaryCommandBuffer) -> Result<(), yarvk::Result>,
     ) -> Result<(), yarvk::Result> {
         self.thread_local_secondary_buffer_map
             .record_in_thread_local_buffer(f)

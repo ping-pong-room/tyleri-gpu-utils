@@ -71,7 +71,7 @@ impl StagingBuffer {
     pub(crate) fn write_and_get_offset(
         &self,
         size: DeviceSize,
-        f: impl Fn(&mut [u8]),
+        f: impl FnOnce(&mut [u8]),
     ) -> Result<DeviceSize, yarvk::Result> {
         let mut aligned_offset;
         loop {

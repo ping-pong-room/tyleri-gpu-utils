@@ -40,7 +40,7 @@ impl AutoMappedDeviceMemory {
         &self,
         offset: DeviceSize,
         size: DeviceSize,
-        f: &dyn Fn(&mut [u8]),
+        f: Box<dyn FnOnce(&mut [u8])>,
     ) -> Result<(), yarvk::Result> {
         {
             let device_memory = self.device_memory.read().unwrap();

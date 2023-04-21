@@ -23,7 +23,7 @@ use yarvk::{AccessFlags, ImageLayout, ImageSubresourceLayers};
 use yarvk::{BufferImageCopy, MemoryPropertyFlags};
 use yarvk::{Extent3D, Handle};
 
-type WriteFn = dyn Fn(&mut [u8]) + Send + Sync;
+type WriteFn = dyn FnOnce(&mut [u8]) + Send + Sync;
 struct PendingImage {
     image: Arc<IMemBakImg>,
     pipeline_stage_flags: PipelineStageFlags,
@@ -35,7 +35,7 @@ struct SubresourceInfo {
     image_subresource: ImageSubresourceLayers,
     image_offset: Offset3D,
     image_extent: Extent3D,
-    f: Arc<WriteFn>,
+    f: Box<WriteFn>,
     access_mask: AccessFlags,
     image_layout: ImageLayout,
 }
@@ -50,7 +50,7 @@ pub struct SubBufferInfo {
     offset: u64,
     size: u64,
     access_mask: AccessFlags,
-    f: Arc<WriteFn>,
+    f: Box<WriteFn>,
 }
 
 #[derive(Default)]
@@ -72,7 +72,7 @@ impl MemoryUpdater {
         access_mask: AccessFlags,
         image_layout: ImageLayout,
         pipeline_stage_flags: PipelineStageFlags,
-        f: Arc<WriteFn>,
+        f: Box<WriteFn>,
     ) {
         // TODO VK_IMAGE_TILING_LINEAR image
         let staging_size = std::cmp::max(image_extent.width as i32 - image_offset.x, 0) as u64
@@ -105,7 +105,7 @@ impl MemoryUpdater {
         size: DeviceSize,
         access_mask: AccessFlags,
         pipeline_stage_flags: PipelineStageFlags,
-        f: Arc<WriteFn>,
+        f: Box<WriteFn>,
     ) {
         let _buffer = Arc::get_mut(buffer).expect("buffer is holding by others");
         unsafe {
@@ -119,7 +119,7 @@ impl MemoryUpdater {
         size: DeviceSize,
         access_mask: AccessFlags,
         pipeline_stage_flags: PipelineStageFlags,
-        f: Arc<WriteFn>,
+        f: Box<WriteFn>,
     ) {
         if !buffer
             .memory_property_flags()
@@ -146,7 +146,7 @@ impl MemoryUpdater {
             .memory_property_flags()
             .contains(MemoryPropertyFlags::HOST_VISIBLE)
         {
-            buffer.map_memory(offset, size, f.as_ref()).unwrap();
+            buffer.map_memory(offset, size, f).unwrap();
         }
         if !buffer
             .memory_property_flags()
@@ -166,7 +166,7 @@ impl MemoryUpdater {
         size: DeviceSize,
         access_mask: AccessFlags,
         pipeline_stage_flags: PipelineStageFlags,
-        f: Arc<WriteFn>,
+        f: Box<WriteFn>,
     ) {
         let _buffer = Arc::get_mut(buffer).expect("buffer is holding by others");
         unsafe {
@@ -193,12 +193,13 @@ impl MemoryUpdater {
                         .record(|command_buffer| {
                             let mut regions = pending_image_wrapper
                                 .regions
-                                .iter()
+                                .into_iter()
                                 .map(|pending_image| {
                                     let offset = staging_buffer
-                                        .write_and_get_offset(pending_image.staging_size, |slice| {
-                                            (pending_image.f)(slice)
-                                        })
+                                        .write_and_get_offset(
+                                            pending_image.staging_size,
+                                            pending_image.f,
+                                        )
                                         .unwrap();
                                     (
                                         ImageTargetInfo {
@@ -241,12 +242,10 @@ impl MemoryUpdater {
                         .record(|command_buffer| {
                             let mut regions = pending_buffer
                                 .sub_info
-                                .iter()
+                                .into_iter()
                                 .map(|pending_buffer| {
                                     let offset = staging_buffer
-                                        .write_and_get_offset(pending_buffer.size, |slice| {
-                                            (pending_buffer.f)(slice)
-                                        })
+                                        .write_and_get_offset(pending_buffer.size, pending_buffer.f)
                                         .unwrap();
                                     (
                                         BufferTargetInfo {

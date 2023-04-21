@@ -1,18 +1,16 @@
 use std::marker::PhantomData;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::slice::from_raw_parts_mut;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use parking_lot::Mutex;
-use rayon::iter::ParallelIterator;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
 use yarvk::binding_resource::BindingResource;
 use yarvk::device::Device;
-use yarvk::device_memory::{DeviceMemory, IMemoryRequirements, UnboundResource};
+use yarvk::device_memory::{DeviceMemory, UnboundResource};
 use yarvk::physical_device::memory_properties::MemoryType;
 use yarvk::pipeline::pipeline_stage_flags::PipelineStageFlag;
 use yarvk::{AccessFlags, DeviceSize};
-use yarvk::{BoundContinuousBuffer, ContinuousBufferBuilder, MemoryPropertyFlags};
+use yarvk::{BoundContinuousBuffer, MemoryPropertyFlags};
 use yarvk::{Buffer, BufferUsageFlags, ContinuousBuffer};
 
 use crate::memory::auto_mapped_device_memory::AutoMappedDeviceMemory;
@@ -88,7 +86,7 @@ impl<T: Sized + 'static + Send + Sync> PrivateMemoryBackedResource for Dedicated
         &self,
         offset: DeviceSize,
         size: DeviceSize,
-        f: &dyn Fn(&mut [u8]),
+        f: Box<dyn FnOnce(&mut [u8])>,
     ) -> Result<(), yarvk::Result> {
         assert!(offset + size <= self.size());
         let offset = self.offset() + offset;
@@ -149,7 +147,7 @@ impl<T: Sized + 'static + Send + Sync> BindlessBufferAllocator<T> {
     }
     pub fn allocate<'a>(
         self: &Arc<Self>,
-        data: &[(usize /*len*/, Arc<dyn Fn(&mut [T]) + Send + Sync>)],
+        data: Vec<(usize /*len*/, Box<dyn FnOnce(&mut [T]) + Send + Sync>)>,
         queue: &mut ParallelRecordingQueue,
     ) -> Vec<Arc<BindlessBuffer<T>>> {
         let mut chunk = self.chunk.lock();
@@ -228,18 +226,17 @@ impl<T: Sized + 'static + Send + Sync> BindlessBufferAllocator<T> {
         }
         let updater = MemoryUpdater::default();
         result_buffers
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(index, bindless_buffer)| {
-                let (len, f) = &data[index];
-                let f = f.clone();
+            .iter_mut()
+            .zip(data)
+            .into_iter()
+            .for_each(|(bindless_buffer, (len, f))| {
                 updater.add_bindless_buffer(
                     bindless_buffer,
                     0,
                     (len * std::mem::size_of::<T>()) as _,
                     AccessFlags::TRANSFER_WRITE,
                     PipelineStageFlag::Transfer.into(),
-                    Arc::new(move |slice: &mut [u8]| {
+                    Box::new(move |slice: &mut [u8]| {
                         let slice = unsafe {
                             from_raw_parts_mut(
                                 slice as *mut _ as *mut T,

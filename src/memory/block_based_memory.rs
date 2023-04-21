@@ -59,7 +59,7 @@ impl<T: UnboundResource> PrivateMemoryBackedResource for BlockBasedResource<T> {
         &self,
         offset: DeviceSize,
         size: DeviceSize,
-        f: &dyn Fn(&mut [u8]),
+        f: Box<dyn FnOnce(&mut [u8])>,
     ) -> Result<(), yarvk::Result> {
         assert!(offset + size <= self.size());
         let offset = self.offset() + offset;
