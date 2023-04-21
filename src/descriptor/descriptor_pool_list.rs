@@ -53,6 +53,8 @@ impl<T: DescriptorSetValue> DescriptorPoolList<T> {
                         .store((*ptr).next.load(Ordering::Relaxed), Ordering::Relaxed);
                     let unused_node = Box::from_raw(ptr);
                     ptr = unused_node.next.load(Ordering::Relaxed);
+                } else {
+                    break;
                 }
             }
             if counts != 0 {
